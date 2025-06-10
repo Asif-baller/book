@@ -170,14 +170,31 @@ if uploaded_file is not None:
     # --- Summarization Section ---
     st.header("📖 Book Summary")
     summary_length = st.slider("Select Summary Length (as % of original)", 10, 80, 30)
+
+    # Define an async function to handle summary generation
+    async def _handle_summary_generation(content, length_ratio):
+        summary = await summarize_book(content, length_ratio)
+        if summary:
+            st.session_state.summary = summary
+        else:
+            st.session_state.summary = "Failed to generate summary."
+
     if st.button("Generate Summary"):
         if text_content:
-            summary = await summarize_book(text_content, summary_length / 100)
-            if summary:
-                st.subheader("Summary:")
-                st.write(summary)
+            # Use st.experimental_user.run_task to execute the async function
+            st.experimental_user.run_task(_handle_summary_generation(text_content, summary_length / 100))
+            st.session_state.show_summary = True # Flag to show summary once task is done
         else:
             st.warning("Please upload a book first.")
+
+    # Display summary if available
+    if 'show_summary' in st.session_state and st.session_state.show_summary:
+        if 'summary' in st.session_state and st.session_state.summary:
+            st.subheader("Summary:")
+            st.write(st.session_state.summary)
+        # Reset the flag after displaying
+        st.session_state.show_summary = False
+
 
     st.markdown("---")
 
@@ -201,22 +218,39 @@ if uploaded_file is not None:
 
                 # --- Quiz Generation Section for Selected Chapter ---
                 st.subheader("❓ Generate Quiz from Selected Chapter")
+
+                # Define an async function to handle quiz generation
+                async def _handle_quiz_generation(segment):
+                    quiz_result = await generate_book_quiz(segment)
+                    if quiz_result and isinstance(quiz_result, list) and quiz_result:
+                        st.session_state.quiz_question = quiz_result
+                    elif "error" in quiz_result:
+                        st.session_state.quiz_error = quiz_result["error"]
+                    else:
+                        st.session_state.quiz_error = "Could not generate quiz. The AI might not have found enough context or the response was not structured as expected."
+
                 if st.button(f"Generate Quiz for '{selected_chapter_title}'"):
                     if chapter_text:
-                        quiz_result = await generate_book_quiz(chapter_text)
-                        if quiz_result and isinstance(quiz_result, list) and quiz_result:
-                            st.subheader("Generated Quiz Question:")
-                            for q_data in quiz_result:
-                                st.write(f"**Question:** {q_data['question']}")
-                                for i, option in enumerate(q_data['options']):
-                                    st.write(f"  {chr(65 + i)}. {option}")
-                                st.write(f"**Correct Answer:** {q_data['correct_answer']}")
-                        elif "error" in quiz_result:
-                            st.error(quiz_result["error"])
-                        else:
-                            st.warning("Could not generate quiz. The AI might not have found enough context or the response was not structured as expected.")
+                        # Use st.experimental_user.run_task to execute the async function
+                        st.experimental_user.run_task(_handle_quiz_generation(chapter_text))
+                        st.session_state.show_quiz = True # Flag to show quiz once task is done
                     else:
                         st.warning("No text available for the selected chapter to generate a quiz.")
+
+                # Display quiz if available
+                if 'show_quiz' in st.session_state and st.session_state.show_quiz:
+                    if 'quiz_question' in st.session_state and st.session_state.quiz_question:
+                        st.subheader("Generated Quiz Question:")
+                        for q_data in st.session_state.quiz_question:
+                            st.write(f"**Question:** {q_data['question']}")
+                            for i, option in enumerate(q_data['options']):
+                                st.write(f"  {chr(65 + i)}. {option}")
+                            st.write(f"**Correct Answer:** {q_data['correct_answer']}")
+                    elif 'quiz_error' in st.session_state:
+                        st.error(st.session_state.quiz_error)
+                    # Reset the flag after displaying
+                    st.session_state.show_quiz = False
+
     else:
         st.info("No chapters found. Chapter detection works best with clear headings like 'Chapter 1', 'CHAPTER TWO', 'Part 1', etc.")
 
